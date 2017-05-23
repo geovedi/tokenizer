@@ -1,7 +1,7 @@
 #!/bin/sed -f
 
 # Preprocess
-s=^= =g
+s=^\(.*\)= \1=g
 s=$= =g
 
 # Detokenize
