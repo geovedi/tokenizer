@@ -5,7 +5,7 @@ from __future__ import unicode_literals
 import sys
 import string
 import regex
-import functools
+#import functools
 
 # TODO:
 # - detokenizer
@@ -18,16 +18,18 @@ URL = regex.compile(r'(http|ftp|https)://([\w_-]+(?:(?:\.[\w_-]+)+))'
                     r'([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?')
 TWITTER = regex.compile(r'[@#][a-z\d]+', flags=regex.I)
 DOMAIN = regex.compile(r'[a-z0-9]([a-z0-9-]+\.){1,}[a-z0-9]+')
-ABBR = regex.compile(r'(?:[A-Z]\.)+')
+ABBR = regex.compile(r'(?:[A-Z]\.){1,}')
 NUM = regex.compile(r'((?:\d+[\.,:])+\d+)', flags=regex.I)
 
 
-@functools.lru_cache(maxsize=65536)
+#@functools.lru_cache(maxsize=1024)
 def find_entities(token):
     if not token:
         return
     match = None
-    if token[0] in '@#':
+    if ABBR.search(token):
+        yield token
+    elif token[0] in '@#':
         match = TWITTER.search(token)
         if match: yield match.group()
     elif '@' in token:
@@ -37,7 +39,7 @@ def find_entities(token):
         match = URL.search(token)
         if match: yield match.group()
     elif '.' in token:
-        for pattern in [ABBR, NUM, DOMAIN]:
+        for pattern in [NUM, DOMAIN]:
             match = pattern.search(token)
             if match: yield match.group()
     elif ',' in token or ':' in token:
@@ -61,7 +63,7 @@ def extract_entities(text):
 
 
 CONTRACTIONS = regex.compile(r" ' (s|m|d|ll|re|ve) ", flags=regex.I)
-
+MONEY = regex.compile(r'(US\$|S\$|AU\$|AUD|CAD|[\$£¥‎€]|Rp)\s?(\d+)')
 
 def fix(text, sep='￭'):
     text = CONTRACTIONS.sub(r" ▁{sep}'\1 ".format(sep=sep), text)
@@ -74,7 +76,8 @@ SPACE = 1
 PUNCT = 2
 OTHER = 3
 
-ADD_PREV = ((OTHER, EMPTY), (OTHER, SPACE), (PUNCT, EMPTY), (PUNCT, SPACE), (OTHER, PUNCT))
+ADD_PREV = ((OTHER, EMPTY), (OTHER, SPACE), (PUNCT, EMPTY), (PUNCT, SPACE),
+            (OTHER, PUNCT))
 ADD_NEXT = ((EMPTY, OTHER), (SPACE, OTHER), (EMPTY, PUNCT), (PUNCT, PUNCT),
             (PUNCT, OTHER), (PUNCT, OTHER))
 ADD_BOTH = ((OTHER, OTHER))
@@ -100,10 +103,13 @@ def tokenizer(text, aggressive=True, separator='￭'):
     psep = ' ▁{0}'.format(separator)
     nsep = '{0}▁ '.format(separator)
 
+    text = MONEY.sub(r"\1 \2", text)
+
     text, entities = extract_entities(text)
     text = text.replace(' ', '▁')
     text = NONWORDS.sub(r' \1 ', text)
     text = fix(text)
+
     tokens = []
     parts = [''] + text.split() + ['']
     for pre, cur, nex in zip(parts, parts[1:], parts[2:]):
