@@ -3,6 +3,7 @@ import regex as re
 
 # TODO:
 # - language specific handling abbreviations and contractions
+# - detokenizer
 
 PUNCTS = set(string.punctuation)
 PUNCTS_PATTERN = re.compile(r'([^\p{P}]+|\p{S}|\p{P})')
