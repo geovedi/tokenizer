@@ -2,7 +2,6 @@
 
 from __future__ import unicode_literals
 
-
 import sys
 import string
 import regex
@@ -16,6 +15,7 @@ PUNCTS_PATTERN = regex.compile(r'([^\p{P}]+|[\p{S}\p{P}])', flags=regex.I)
 EMAIL = regex.compile(r'([a-z\d\.-]+@[a-z\d\.-]+)', flags=regex.I)
 URL = regex.compile(r'([a-z\d]+:\/\/\S+)', flags=regex.I)
 DOMAIN = regex.compile(r'^[a-z0-9]([a-z0-9-]+\.){1,}[a-z0-9]+\Z')
+
 
 def extract_entities(text):
     ents = set()
@@ -51,6 +51,7 @@ def extract_entities(text):
 
 CONTRACTIONS = regex.compile(r"('(s|m|d|ll|re|ve)\W)|(n't\W)", flags=regex.I)
 
+
 def handle_contractions(text, sep='￭'):
     text = CONTRACTIONS.sub(r' {sep}\1'.format(sep=sep), text)
     return text
@@ -61,9 +62,11 @@ SPACE = 1
 PUNCT = 2
 OTHER = 3
 
-ADD_PREV = ((OTHER, EMPTY), (OTHER, SPACE), (OTHER, PUNCT), (PUNCT, EMPTY), (PUNCT, SPACE))
+ADD_PREV = ((OTHER, EMPTY), (OTHER, SPACE), (OTHER, PUNCT), (PUNCT, EMPTY),
+            (PUNCT, SPACE))
 ADD_NEXT = ((EMPTY, OTHER), (SPACE, OTHER), (EMPTY, PUNCT), (PUNCT, PUNCT))
 ADD_BOTH = ((OTHER, OTHER), (PUNCT, OTHER), (PUNCT, OTHER))
+
 
 def check(text, mode=None):
     char = None
@@ -80,7 +83,9 @@ def check(text, mode=None):
         return PUNCT
     return OTHER
 
-MWE_PUNCTS = ',-/.:\''
+
+MULTI = ',-/.:\''
+
 
 def tokenizer(text, aggressive=False, separator='￭'):
     psep = ' {0}'.format(separator)
@@ -96,13 +101,14 @@ def tokenizer(text, aggressive=False, separator='￭'):
     for pre, cur, nex in zip(parts, parts[1:], parts[2:]):
         if cur in PUNCTS:
             _aggressive = aggressive
-            if not cur in MWE_PUNCTS and aggressive is True:
+            if not cur in MULTI and aggressive is True:
                 _aggressive = False
 
             (p, n) = (check(pre, 'pre'), check(nex, 'nex'))
 
             # abbreviations?
-            if cur == '.' and (len(pre.strip()) == 1 or len(nex.strip()) == 1) and (p == OTHER or n == OTHER):
+            if cur == '.' and (p == OTHER or n == OTHER) and \
+                    (len(pre.strip()) == 1 or len(nex.strip()) == 1):
                 tokens.append('{cur}'.format(cur=cur))
                 continue
 
@@ -129,4 +135,3 @@ def tokenizer(text, aggressive=False, separator='￭'):
 if __name__ == '__main__':
     for line in sys.stdin:
         print(' '.join(tokenizer(line.strip(), aggressive=True)))
-
