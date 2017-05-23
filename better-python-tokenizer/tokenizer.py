@@ -1,6 +1,9 @@
 import string
 import regex as re
 
+# TODO:
+# - language specific handling abbreviations and contractions
+
 PUNCTS = set(string.punctuation)
 PUNCTS_PATTERN = re.compile(r'([^\p{P}]+|\p{S}|\p{P})')
 EMAIL = re.compile(r'([a-z\d\.-]+@[a-z\d\.-]+)', re.I)
