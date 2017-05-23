@@ -12,12 +12,12 @@ import functools
 
 MULTI = ',-/.:'
 PUNCTS = set(string.punctuation)
-PUNCTS_PATTERN = regex.compile(r'([\p{P}\p{S}\p{Z}\p{M}\n ])', flags=regex.I)
+NONWORDS = regex.compile(r'([\p{P}\p{S}\p{Z}\p{M}\p{C}\n ])', flags=regex.I)
 EMAIL = regex.compile(r'([a-z\d\.-]+@[a-z\d\.-]+)', flags=regex.I)
 URL = regex.compile(r'(http|ftp|https)://([\w_-]+(?:(?:\.[\w_-]+)+))'
                     r'([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?')
 TWITTER = regex.compile(r'[@#][a-z\d]+', flags=regex.I)
-DOMAIN = regex.compile(r'^[a-z0-9]([a-z0-9-]+\.){1,}[a-z0-9]+\Z')
+DOMAIN = regex.compile(r'[a-z0-9]([a-z0-9-]+\.){1,}[a-z0-9]+')
 ABBR = regex.compile(r'(?:[A-Z]\.)+')
 NUM = regex.compile(r'((?:\d+[\.,:])+\d+)', flags=regex.I)
 
@@ -103,7 +103,7 @@ def tokenizer(text, aggressive=True, separator='￭'):
     nsep = '{0} '.format(separator)
 
     text, entities = extract_entities(text)
-    text = PUNCTS_PATTERN.sub(r' \1 ', text)
+    text = NONWORDS.sub(r' \1 ', text)
     text = fix(text)
 
     tokens = []
