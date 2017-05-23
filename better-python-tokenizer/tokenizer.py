@@ -126,10 +126,10 @@ def tokenizer(text, aggressive=True, separator='￭'):
             tokens.append('{psep}{cur}'.format(cur=cur, psep=psep))
         elif (p, n) in ADD_BOTH:
             if _aggressive:
-                tokens.append('{psep}{cur}'.format(cur=cur, psep=psep))
-            else:
                 tokens.append('{psep}{cur}{nsep}'
                               .format(cur=cur, psep=psep, nsep=nsep))
+            else:
+                tokens.append('{psep}{cur}'.format(cur=cur, psep=psep))
         else:
             tokens.append('{cur}'.format(cur=cur))
 
