@@ -5,55 +5,68 @@ from __future__ import unicode_literals
 import sys
 import string
 import regex
+import functools
 
 # TODO:
-# - language specific handling abbreviations and contractions
 # - detokenizer
 
+MULTI = ',-/.:'
 PUNCTS = set(string.punctuation)
-PUNCTS_PATTERN = regex.compile(r'([^\p{P}]+|[\p{S}\p{P}])', flags=regex.I)
+PUNCTS_PATTERN = regex.compile(r'([\p{P}\p{S}\p{Z}\p{M}\n ])', flags=regex.I)
 EMAIL = regex.compile(r'([a-z\d\.-]+@[a-z\d\.-]+)', flags=regex.I)
-URL = regex.compile(r'([a-z\d]+:\/\/\S+)', flags=regex.I)
+URL = regex.compile(r'(http|ftp|https)://([\w_-]+(?:(?:\.[\w_-]+)+))'
+                    r'([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?')
+TWITTER = regex.compile(r'[@#][a-z\d]+', flags=regex.I)
 DOMAIN = regex.compile(r'^[a-z0-9]([a-z0-9-]+\.){1,}[a-z0-9]+\Z')
+ABBR = regex.compile(r'(?:[A-Z]\.)+')
+NUM = regex.compile(r'((?:\d+[\.,:])+\d+)', flags=regex.I)
+
+
+@functools.lru_cache(maxsize=65536)
+def find_entities(token):
+    if not token:
+        return
+
+    match = None
+    if token[0] in '@#':
+        match = TWITTER.search(token)
+        if match: yield match.group()
+    elif '@' in token:
+        match = EMAIL.search(token)
+        if match: yield match.group()
+    elif '://' in token:
+        match = URL.search(token)
+        if match: yield match.group()
+    elif '.' in token:
+        for pattern in [ABBR, NUM, DOMAIN]:
+            match = pattern.search(token)
+            if match: yield match.group()
+    elif ',' in token or ':' in token:
+        match = NUM.search(token)
+        if match: yield match.group()
 
 
 def extract_entities(text):
     ents = set()
     for token in regex.split(r'\s+', text):
-        if not token:
-            continue
-        if token[0] in '@#':
-            # twitter user and hashtag
-            ents.add(token)
-        elif '@' in token:
-            # could be email?
-            match = EMAIL.search(token)
-            if match:
-                ents.add(match.group())
-        elif '://' in token:
-            # url
-            match = URL.search(token)
-            if match:
-                ents.add(match.group())
-        elif len(token.split('.')) >= 2:
-            match = DOMAIN.search(token)
-            if match:
-                ents.add(match.group())
+        for ent in find_entities(token):
+            ents.add(ent)
 
     entities = {}
     for i, e in enumerate(sorted(ents, key=len, reverse=True)):
-        eid = 'ENT_{0}'.format(i)
-        entities[eid] = e
+        eid = ' ENT{0} '.format(i)
+        entities[eid] = e.strip()
         text = text.replace(e, eid)
 
     return (text, entities)
 
 
-CONTRACTIONS = regex.compile(r"('(s|m|d|ll|re|ve)\W)|(n't\W)", flags=regex.I)
+CONTRACTIONS = regex.compile(r" ' (s|m|d|ll|re|ve) ", flags=regex.I)
 
 
-def handle_contractions(text, sep='￭'):
-    text = CONTRACTIONS.sub(r' {sep}\1'.format(sep=sep), text)
+def fix(text, sep='￭'):
+    text = CONTRACTIONS.sub(r' {sep}\1 '.format(sep=sep), text)
+    text = text.replace(" n ' t ", " n't ")
     return text
 
 
@@ -64,8 +77,9 @@ OTHER = 3
 
 ADD_PREV = ((OTHER, EMPTY), (OTHER, SPACE), (OTHER, PUNCT), (PUNCT, EMPTY),
             (PUNCT, SPACE))
-ADD_NEXT = ((EMPTY, OTHER), (SPACE, OTHER), (EMPTY, PUNCT), (PUNCT, PUNCT))
-ADD_BOTH = ((OTHER, OTHER), (PUNCT, OTHER), (PUNCT, OTHER))
+ADD_NEXT = ((EMPTY, OTHER), (SPACE, OTHER), (EMPTY, PUNCT), (PUNCT, PUNCT),
+            (PUNCT, OTHER))
+ADD_BOTH = ((OTHER, OTHER), (PUNCT, OTHER))
 
 
 def check(text, mode=None):
@@ -84,48 +98,42 @@ def check(text, mode=None):
     return OTHER
 
 
-MULTI = ',-/.:\''
-
-
-def tokenizer(text, aggressive=False, separator='￭'):
+def tokenizer(text, aggressive=True, separator='￭'):
     psep = ' {0}'.format(separator)
     nsep = '{0} '.format(separator)
 
-    # pre-processing
     text, entities = extract_entities(text)
-    text = handle_contractions(text)
+    text = PUNCTS_PATTERN.sub(r' \1 ', text)
+    text = fix(text)
 
     tokens = []
-    parts = [''] + list(filter(None, PUNCTS_PATTERN.split(text))) + ['']
+    parts = [''] + text.split() + ['']
 
     for pre, cur, nex in zip(parts, parts[1:], parts[2:]):
-        if cur in PUNCTS:
-            _aggressive = aggressive
-            if not cur in MULTI and aggressive is True:
-                _aggressive = False
+        if not cur in PUNCTS:
+            tokens.append(' {cur} '.format(cur=cur))
+            continue
 
-            (p, n) = (check(pre, 'pre'), check(nex, 'nex'))
+        _aggressive = aggressive
+        if aggressive is True and cur in MULTI:
+            _aggressive = False
 
-            # abbreviations?
-            if cur == '.' and (p == OTHER or n == OTHER) and \
-                    (len(pre.strip()) == 1 or len(nex.strip()) == 1):
-                tokens.append('{cur}'.format(cur=cur))
-                continue
+        (p, n) = (check(pre, 'pre'), check(nex, 'nex'))
 
-            if (p, n) in ADD_NEXT:
-                tokens.append('{cur}{nsep}'.format(cur=cur, nsep=nsep))
-            elif (p, n) in ADD_PREV:
+        if (p, n) in ADD_NEXT:
+            tokens.append('{cur}{nsep}'.format(cur=cur, nsep=nsep))
+        elif (p, n) in ADD_PREV:
+            tokens.append('{psep}{cur}'.format(cur=cur, psep=psep))
+        elif (p, n) in ADD_BOTH:
+            if _aggressive:
                 tokens.append('{psep}{cur}'.format(cur=cur, psep=psep))
-            elif (p, n) in ADD_BOTH and _aggressive:
-                tokens.append(
-                    '{psep}{cur}{nsep}'.format(cur=cur, psep=psep, nsep=nsep))
             else:
-                tokens.append('{cur}'.format(cur=cur))
+                tokens.append('{psep}{cur}{nsep}'
+                              .format(cur=cur, psep=psep, nsep=nsep))
         else:
             tokens.append('{cur}'.format(cur=cur))
 
-    # post-processing
-    text = ''.join(tokens)
+    text = ' '.join(tokens)
     for eid, ent in entities.items():
         text = text.replace(eid, ent)
 
