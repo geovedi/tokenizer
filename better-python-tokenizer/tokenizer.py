@@ -26,7 +26,6 @@ NUM = regex.compile(r'((?:\d+[\.,:])+\d+)', flags=regex.I)
 def find_entities(token):
     if not token:
         return
-
     match = None
     if token[0] in '@#':
         match = TWITTER.search(token)
@@ -54,7 +53,7 @@ def extract_entities(text):
 
     entities = {}
     for i, e in enumerate(sorted(ents, key=len, reverse=True)):
-        eid = ' ENT{0} '.format(i)
+        eid = 'ENT{0}'.format(i)
         entities[eid] = e.strip()
         text = text.replace(e, eid)
 
@@ -65,8 +64,8 @@ CONTRACTIONS = regex.compile(r" ' (s|m|d|ll|re|ve) ", flags=regex.I)
 
 
 def fix(text, sep='￭'):
-    text = CONTRACTIONS.sub(r' {sep}\1 '.format(sep=sep), text)
-    text = text.replace(" n ' t ", " n't ")
+    text = CONTRACTIONS.sub(r" ▁{sep}'\1 ".format(sep=sep), text)
+    text = text.replace("n ' t ", " ▁{sep}n't ".format(sep=sep))
     return text
 
 
@@ -75,11 +74,10 @@ SPACE = 1
 PUNCT = 2
 OTHER = 3
 
-ADD_PREV = ((OTHER, EMPTY), (OTHER, SPACE), (OTHER, PUNCT), (PUNCT, EMPTY),
-            (PUNCT, SPACE))
+ADD_PREV = ((OTHER, EMPTY), (OTHER, SPACE), (PUNCT, EMPTY), (PUNCT, SPACE), (OTHER, PUNCT))
 ADD_NEXT = ((EMPTY, OTHER), (SPACE, OTHER), (EMPTY, PUNCT), (PUNCT, PUNCT),
-            (PUNCT, OTHER))
-ADD_BOTH = ((OTHER, OTHER), (PUNCT, OTHER))
+            (PUNCT, OTHER), (PUNCT, OTHER))
+ADD_BOTH = ((OTHER, OTHER))
 
 
 def check(text, mode=None):
@@ -91,7 +89,7 @@ def check(text, mode=None):
 
     if char == None:
         return EMPTY
-    elif char == ' ':
+    elif char == '▁':
         return SPACE
     elif char in PUNCTS:
         return PUNCT
@@ -99,16 +97,15 @@ def check(text, mode=None):
 
 
 def tokenizer(text, aggressive=True, separator='￭'):
-    psep = ' {0}'.format(separator)
-    nsep = '{0} '.format(separator)
+    psep = ' ▁{0}'.format(separator)
+    nsep = '{0}▁ '.format(separator)
 
     text, entities = extract_entities(text)
+    text = text.replace(' ', '▁')
     text = NONWORDS.sub(r' \1 ', text)
     text = fix(text)
-
     tokens = []
     parts = [''] + text.split() + ['']
-
     for pre, cur, nex in zip(parts, parts[1:], parts[2:]):
         if not cur in PUNCTS:
             tokens.append(' {cur} '.format(cur=cur))
@@ -126,17 +123,17 @@ def tokenizer(text, aggressive=True, separator='￭'):
             tokens.append('{psep}{cur}'.format(cur=cur, psep=psep))
         elif (p, n) in ADD_BOTH:
             if _aggressive:
-                tokens.append('{psep}{cur}{nsep}'
+                tokens.append('{psep}{cur}{nsep} '
                               .format(cur=cur, psep=psep, nsep=nsep))
             else:
                 tokens.append('{psep}{cur}'.format(cur=cur, psep=psep))
         else:
             tokens.append('{cur}'.format(cur=cur))
 
-    text = ' '.join(tokens)
+    text = ' '.join(token.strip() for token in tokens)
     for eid, ent in entities.items():
         text = text.replace(eid, ent)
-
+    text = text.replace(' ', '').replace('▁', ' ')
     return text.split()
 
 
