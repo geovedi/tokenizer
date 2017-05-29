@@ -20,7 +20,7 @@ class Tokenizer(object):
     TWITTER = re.compile(r'[@#][a-z\d_]+', flags=re.I)
     ABBR = re.compile(r'(?:[A-Z]\.){1,}|(Prof|[Dd]r|[Rr]ev)\.')
     NUM = re.compile(r'((?:\d+[\.,:—-])+\d+)', flags=re.I)
-    MONEY = re.compile(r'(US\$|S\$|AU\$|AUD|CAD|[\$£¥‎€]|Rp)(\s?\d+)')
+    MONEY = re.compile(r'((?:US|S|AU)\$|(?:AU|CA)D|[\$£¥€]|R[ps]\.?)(\s?\d+)')
     CONTRACTIONS = re.compile(
         r"(?<=\w+)('(s|m|d|ll|re|ve)|n't)(?<![^\w])", flags=re.I)
 
@@ -91,15 +91,13 @@ class Tokenizer(object):
 
         for i, tok in enumerate(tokens):
             if tok in self.PUNCTUATIONS:
-                if i == 0:
-                    tok = tok
-                else:
+                if i > 0:
                     if tokens[i - 1] != ' ':
                         tok = self.joiner + tok
 
-                    if i < length - 1:
-                        if tokens[i + 1] != ' ':
-                            tok = tok + self.joiner
+                if i < length - 1:
+                    if tokens[i + 1] != ' ':
+                        tok = tok + self.joiner
 
             new_tokens.append(tok)
 
