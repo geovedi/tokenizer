@@ -3,146 +3,119 @@
 from __future__ import unicode_literals
 
 import sys
-import string
-import regex
-#import functools
-
-# TODO:
-# - detokenizer
-
-MULTI = ',-/.:'
-PUNCTS = set(string.punctuation)
-NONWORDS = regex.compile(r'([\p{P}\p{S}\p{Z}\p{M}\p{C}\n ])', flags=regex.I)
-EMAIL = regex.compile(r'([a-z\d\.-]+@[a-z\d\.-]+)', flags=regex.I)
-URL = regex.compile(r'(http|ftp|https)://([\w_-]+(?:(?:\.[\w_-]+)+))'
-                    r'([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?')
-TWITTER = regex.compile(r'[@#][a-z\d]+', flags=regex.I)
-DOMAIN = regex.compile(r'[a-z0-9]([a-z0-9-]+\.){1,}[a-z0-9]+')
-ABBR = regex.compile(r'(?:[A-Z]\.){1,}')
-NUM = regex.compile(r'((?:\d+[\.,:])+\d+)', flags=regex.I)
+from collections import OrderedDict
+import regex as re
 
 
-#@functools.lru_cache(maxsize=1024)
-def find_entities(token):
-    if not token:
-        return
-    match = None
-    if ABBR.search(token):
-        yield token
-    elif token[0] in '@#':
-        match = TWITTER.search(token)
-        if match: yield match.group()
-    elif '@' in token:
-        match = EMAIL.search(token)
-        if match: yield match.group()
-    elif '://' in token:
-        match = URL.search(token)
-        if match: yield match.group()
-    elif '.' in token:
-        for pattern in [NUM, DOMAIN]:
-            match = pattern.search(token)
-            if match: yield match.group()
-    elif ',' in token or ':' in token:
-        match = NUM.search(token)
-        if match: yield match.group()
+class Tokenizer(object):
+    PUNCTUATIONS = set('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~')
 
+    SPLITTER = re.compile(r'(\w+|\s|[^\w\s])', flags=re.S | re.M | re.V0)
+    EMAIL = re.compile(r'([a-z\d\.-]+@[a-z\d\.-]+[a-z])', flags=re.I)
+    URL = re.compile(
+        r'(http|ftp|https)://([\w_-]+(?:(?:\.[\w_-]+)+))'
+        r'([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?',
+        flags=re.I)
+    DOMAIN = re.compile(r'[a-z0-9]([a-z0-9-]+\.){1,}[a-z0-9]+', flags=re.I)
+    TWITTER = re.compile(r'[@#][a-z\d_]+', flags=re.I)
+    ABBR = re.compile(r'(?:[A-Z]\.){1,}|(Prof|[Dd]r|[Rr]ev)\.')
+    NUM = re.compile(r'((?:\d+[\.,:—-])+\d+)', flags=re.I)
+    MONEY = re.compile(r'(US\$|S\$|AU\$|AUD|CAD|[\$£¥‎€]|Rp)(\s?\d+)')
+    CONTRACTIONS = re.compile(
+        r"(?<=\w+)('(s|m|d|ll|re|ve)|n't)(?<![^\w])", flags=re.I)
 
-def extract_entities(text):
-    ents = set()
-    for token in regex.split(r'\s+', text):
-        for ent in find_entities(token):
-            ents.add(ent)
+    REPLACETABLE = {
+        '“': '"',
+        '”': '"',
+        '’': "'",
+        '‘': "'",
+        '—': ' — ',
+        '–': ' — ',
+        '…': '...',
+        '—': ' — ',
+        '̶': ' — ',
+        '♫': ' ♫ ',
+        '♪': ' ♪ ',
+        '\u00ad': '',
+        '\u0080': '',
+        '\u0093': '',
+        '\uFEFF': '',
+        '\u200B': ''
+    }
 
-    entities = {}
-    for i, e in enumerate(sorted(ents, key=len, reverse=True)):
-        eid = 'ENT{0}'.format(i)
-        entities[eid] = e.strip()
-        text = text.replace(e, eid)
+    def __init__(self, joiner='￭'):
+        self.joiner = joiner
 
-    return (text, entities)
+    def _preprocess(self, text):
+        text = self.MONEY.sub(r'\1 \2', text)
+        for pat, rep in self.REPLACETABLE.items():
+            text = text.replace(pat, rep)
+        return text
 
+    def _protect(self, text):
+        protected = OrderedDict()
+        protected['PIPE'] = '|||'
 
-CONTRACTIONS = regex.compile(r" ' (s|m|d|ll|re|ve) ", flags=regex.I)
-MONEY = regex.compile(r'(US\$|S\$|AU\$|AUD|CAD|[\$£¥‎€]|Rp)\s?(\d+)')
+        for i, chunk in enumerate(self.CONTRACTIONS.finditer(text)):
+            protected['CONT{0}'.format(i)] = self.joiner + chunk.group()
 
-def fix(text, sep='￭'):
-    text = CONTRACTIONS.sub(r" ▁{sep}'\1 ".format(sep=sep), text)
-    text = text.replace("n ' t ", " ▁{sep}n't ".format(sep=sep))
-    return text
+        for i, chunk in enumerate(self.EMAIL.finditer(text)):
+            protected['EMAIL{0}'.format(i)] = chunk.group()
 
+        for i, chunk in enumerate(self.URL.finditer(text)):
+            protected['URL{0}'.format(i)] = chunk.group()
 
-EMPTY = 0
-SPACE = 1
-PUNCT = 2
-OTHER = 3
+        for i, chunk in enumerate(self.DOMAIN.finditer(text)):
+            protected['DOMAIN{0}'.format(i)] = chunk.group()
 
-ADD_PREV = ((OTHER, EMPTY), (OTHER, SPACE), (PUNCT, EMPTY), (PUNCT, SPACE),
-            (OTHER, PUNCT))
-ADD_NEXT = ((EMPTY, OTHER), (SPACE, OTHER), (EMPTY, PUNCT), (PUNCT, PUNCT),
-            (PUNCT, OTHER), (PUNCT, OTHER))
-ADD_BOTH = ((OTHER, OTHER))
+        for i, chunk in enumerate(self.TWITTER.finditer(text)):
+            protected['TWITTER{0}'.format(i)] = chunk.group()
 
+        for i, chunk in enumerate(self.ABBR.finditer(text)):
+            protected['ABBR{0}'.format(i)] = chunk.group()
 
-def check(text, mode=None):
-    char = None
-    if mode == 'pre' and text:
-        char = text[-1]
-    elif mode == 'nex' and text:
-        char = text[0]
+        for i, chunk in enumerate(self.NUM.finditer(text)):
+            protected['NUM{0}'.format(i)] = chunk.group()
 
-    if char == None:
-        return EMPTY
-    elif char == '▁':
-        return SPACE
-    elif char in PUNCTS:
-        return PUNCT
-    return OTHER
+        for pat, rep in protected.items():
+            if rep.startswith(self.joiner):
+                text = text.replace(rep[1:], ' ' + pat)
+            text = text.replace(rep, pat)
 
+        return (text, protected)
 
-def tokenizer(text, aggressive=True, separator='￭'):
-    psep = ' ▁{0}'.format(separator)
-    nsep = '{0}▁ '.format(separator)
+    def _add_joiner(self, tokens, protected):
+        tokens = list(filter(None, tokens))
+        length = len(tokens)
+        new_tokens = []
 
-    text = MONEY.sub(r"\1 \2", text)
+        for i, tok in enumerate(tokens):
+            if tok in self.PUNCTUATIONS:
+                if i == 0:
+                    tok = tok
+                else:
+                    if tokens[i - 1] != ' ':
+                        tok = self.joiner + tok
 
-    text, entities = extract_entities(text)
-    text = text.replace(' ', '▁')
-    text = NONWORDS.sub(r' \1 ', text)
-    text = fix(text)
+                    if i < length - 1:
+                        if tokens[i + 1] != ' ':
+                            tok = tok + self.joiner
 
-    tokens = []
-    parts = [''] + text.split() + ['']
-    for pre, cur, nex in zip(parts, parts[1:], parts[2:]):
-        if not cur in PUNCTS:
-            tokens.append(' {cur} '.format(cur=cur))
-            continue
+            new_tokens.append(tok)
 
-        _aggressive = aggressive
-        if aggressive is True and cur in MULTI:
-            _aggressive = False
+        text = ' '.join(new_tokens)
+        for pat, rep in protected.items():
+            text = text.replace(pat, rep)
 
-        (p, n) = (check(pre, 'pre'), check(nex, 'nex'))
+        return text.split()
 
-        if (p, n) in ADD_NEXT:
-            tokens.append('{cur}{nsep}'.format(cur=cur, nsep=nsep))
-        elif (p, n) in ADD_PREV:
-            tokens.append('{psep}{cur}'.format(cur=cur, psep=psep))
-        elif (p, n) in ADD_BOTH:
-            if _aggressive:
-                tokens.append('{psep}{cur}{nsep} '
-                              .format(cur=cur, psep=psep, nsep=nsep))
-            else:
-                tokens.append('{psep}{cur}'.format(cur=cur, psep=psep))
-        else:
-            tokens.append('{cur}'.format(cur=cur))
-
-    text = ' '.join(token.strip() for token in tokens)
-    for eid, ent in entities.items():
-        text = text.replace(eid, ent)
-    text = text.replace(' ', '').replace('▁', ' ')
-    return text.split()
+    def tokenize(self, text):
+        text = self._preprocess(text)
+        text, protected = self._protect(text)
+        return self._add_joiner(self.SPLITTER.split(text), protected)
 
 
 if __name__ == '__main__':
+    tokenize = Tokenizer().tokenize
     for line in sys.stdin:
-        print(' '.join(tokenizer(line.strip(), aggressive=True)))
+        print(' '.join(tokenize(line.strip())))
