@@ -37,13 +37,33 @@ class Tokenizer(object):
         '♫': ' ♫ ',
         '♪': ' ♪ ',
         'â\u0082Ź': '€',
+        'â ?? Ź': '€',
+        'â\u0080\u008B': '',
         'â\u0080˘': '•',
+        'â\u0084˘': '™',
+        'â\u0096ş': '►',
+        'â\u0087§': '⇧',
+        'Âť': '»',
+        'Â°': '°',
+        'ĂŠ': 'é',
+        'ĂŽ': 'î',
+        'ĂŞ': 'ê',
+        'Ăź': 'ü',
+        'Â(C)': '©',
+        'Â (C)': '©',
+        'Ë\u0098': '•',
+        'Ă\u0089': 'É',
+        '¡¯': "'",
+        'Î\u009C': 'µ',
+        'Ă\u00AD': 'í',
+        'Ă\u0091': 'Ñ',
         'Ă\u0097': '×',
         '\u00ad': '',
         '\u0080': '',
         '\u0093': '',
         '\uFEFF': '',
         '\u200B': '',
+        '\u200E': '',
         '\u008B': '',
         '\u0082': '',
     })
@@ -91,18 +111,16 @@ class Tokenizer(object):
 
     def _add_joiner(self, tokens, protected):
         tokens = list(filter(None, tokens))
-        length = len(tokens)
         new_tokens = []
 
-        for i, tok in enumerate(tokens):
+        tokens = [' '] + tokens + [' ']
+        for pre, tok, nex in zip(tokens, tokens[1:], tokens[2:]):
             if tok in self.PUNCTUATIONS:
-                if i > 0:
-                    if tokens[i - 1] != ' ':
-                        tok = self.joiner + tok
+                if pre != ' ':
+                    tok = self.joiner + tok
 
-                if i < length - 1:
-                    if tokens[i + 1] != ' ':
-                        tok = tok + self.joiner
+                if nex != ' ':
+                    tok = tok + self.joiner
 
             new_tokens.append(tok)
 
