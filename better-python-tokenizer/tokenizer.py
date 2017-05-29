@@ -24,7 +24,7 @@ class Tokenizer(object):
     CONTRACTIONS = re.compile(
         r"(?<=\w+)('(s|m|d|ll|re|ve)|n't)(?<![^\w])", flags=re.I)
 
-    REPLACETABLE = {
+    REPLACETABLE = OrderedDict({
         '“': '"',
         '”': '"',
         '’': "'",
@@ -36,12 +36,17 @@ class Tokenizer(object):
         '̶': ' — ',
         '♫': ' ♫ ',
         '♪': ' ♪ ',
+        'â\u0082Ź': '€',
+        'â\u0080˘': '•',
+        'Ă\u0097': '×',
         '\u00ad': '',
         '\u0080': '',
         '\u0093': '',
         '\uFEFF': '',
-        '\u200B': ''
-    }
+        '\u200B': '',
+        '\u008B': '',
+        '\u0082': '',
+    })
 
     def __init__(self, joiner='￭'):
         self.joiner = joiner
